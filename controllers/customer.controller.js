@@ -1,8 +1,12 @@
-const {createCustomerValidation } = require('../validations/customer.validation')
+const {createCustomerValidation, updateCustomerValidation } = require('../validations/customer.validation')
 const {Customers}  = require('../models/customer.model')
 const { Otp } = require('../models/otp.model')
 const {hashPassword, generateOtp} = require('../utils')
 const { v4: uuidv4 } = require('uuid');
+const data  = require('../messages')
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const FIVE_MINUTES = 60 * 5
 
 const createCustomer = async(req, res) => {
 
@@ -13,7 +17,7 @@ const createCustomer = async(req, res) => {
     if (error != undefined) throw new Error(error.details[0].message) 
      const checkIfEmailExist = await Customers.findOne({where:{ email: email} })
  
-    if(checkIfEmailExist != null ) throw new Error('A customer already exist with this email')
+    if(checkIfEmailExist != null ) throw new Error(data.customerExist)
     const [hash, salt] = await hashPassword(password)
     await Customers.create({
         customer_id: uuidv4(),
@@ -33,8 +37,8 @@ const createCustomer = async(req, res) => {
 
     
      res.status(200).json({
-            status: "success",
-            message: 'An OTP has been sent to your email'
+            status: data.successStatus,
+            message: data.otpSent
      })
 
    }catch(error){
@@ -55,7 +59,7 @@ const verifyEmail = async(req, res) => {
         const checkIfEmailAndOtpExist =  await Otp.findOne({where:{ email: email, otp: otp} })
        
 
-        if(checkIfEmailAndOtpExist == null ) throw new Error('Invalid or Expired OTP')
+        if(checkIfEmailAndOtpExist == null ) throw new Error(data.otpInvalidOrExpired)
             //todo : check the expirationtime of the otp
         await Customers.update(
             { is_email_verified: true },
@@ -66,8 +70,8 @@ const verifyEmail = async(req, res) => {
             },
           )
         res.status(200).json({
-            status: "success",
-            message: 'Email verified successfully'
+            status: data.successStatus,
+            message: data.emailVerified
         })
 
     }catch(error){
@@ -79,13 +83,66 @@ const verifyEmail = async(req, res) => {
     
 }
 
-const updateCustomer = (req, res) => { 
-//assignment
+const updateCustomer = async(req, res) => { 
+    //assignment
+    try{
+    const { customer_id } = req.params
+    const data = req.body
+    //validate 
+    const { error } = updateCustomerValidation(req.body)
+    if (error != undefined) throw new Error(error.details[0].message)
+    await Customers.update(req.body, {
+            where: {
+            customer_id: customer_id,
+            },
+        },
+        );
+    
+    res.status(200).json({
+        status: data.successStatus,
+        message: data.customerUpdated
+    })
+
+    }catch(error){
+        res.status(400).json({
+            status: data.errorStatus,
+            message: error.message
+        })
+    }
+
+
  }
 
+
+const login = async(req, res) => {
+    try{
+    const { email, password } = req.body
+    if(!email.trim() || !password.trim()) throw new Error('Email and password are required')
+    const customer = await Customers.findOne({where:{ email: email} })
+    if(customer == null ) throw new Error('Invalid email or password')
+        
+    const match = await bcrypt.compare(password, customer.hash);
+    if(!match) throw new Error('Invalid email or password')
+    
+    const token = jwt.sign({ email: email }, process.env.JWT_SECRET, { expiresIn: FIVE_MINUTES });
+    
+    res.status(200).json({
+        status: data.successStatus,
+        message: 'Login successful',
+        token: token
+    })
+
+    }catch(error){
+        res.status(400).json({
+            status: data.errorStatus,
+            message: error.message
+        })
+    }   
+}
 
 module.exports = {
     createCustomer,
     updateCustomer,
-    verifyEmail
+    verifyEmail,
+    login
 }

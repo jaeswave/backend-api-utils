@@ -12,6 +12,16 @@ const createCustomerValidation = (data) =>  {
 }
 
 
+const updateCustomerValidation = (data) =>  {
+    const customerSchema =  Joi.object({
+        surname: Joi.string(),
+        othernames: Joi.string(),
+        phone: Joi.string()
+    })
+    return customerSchema.validate(data)
+}
+
 module.exports = {
-    createCustomerValidation
+    createCustomerValidation,
+    updateCustomerValidation
 }

@@ -127,6 +127,7 @@ const Customers = sequelize.define("Customer",
   timestamps: false,
   createdAt: false,
   updatedAt: false  
+  
 })
 
 

@@ -2,6 +2,7 @@
 const { Todo } = require('../models/todo.model');
 const { validateTodo } = require('../validations/todo.validation')
 const { v4: uuidv4 } = require('uuid'); 
+const data = require('../messages')
 
 
 
@@ -22,19 +23,55 @@ const createTodo = async(req, res) => {
             customer_id: customer_id
         })
         res.status(200).json({
-            status: "success",
+            status: data.successStatus,
             message: 'Todo created successfully'
         })
 
     }catch(error){
 
         res.status(400).json({
-            status: "error",
+            status: data.errorStatus,
             message: error.message
         })
     }
 
 }
 
+const getTodos = async(req, res) => {
+    try{
+        const { customer_id } = req.params //passd from the middleware  
+        const todos = await Todo.findAll({where:{ customer_id: customer_id, is_deleted: false }})
+        res.status(200).json({
+            status: "success",
+            message: "Todos fetched successfully",
+            data: todos
+        })
+    }catch(error){
+        res.status(400).json({
+            status: "error",
+            message: error.message
+        })
+    }
+}
 
-module.exports = { createTodo }
+
+const getTodo = async(req, res) => {
+    try{
+        const { todo_id } = req.params
+        const { customer_id } = req.params //passd from the middleware
+        const todo = await Todo.findOne({where:{ todo_id: todo_id, is_deleted: false, customer_id: customer_id }})
+        console.log("todo" , todo)
+        res.status(200).json({
+            status: data.successStatus,
+            message: data.todoSuccess,
+            data: todo
+        })
+    }catch(error){
+        res.status(400).json({
+            status: data.errorStatus,
+            message: error.message
+        })
+    }
+}
+
+module.exports = { createTodo, getTodos, getTodo }
