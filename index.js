@@ -5,12 +5,16 @@ const displayRoutes = require('express-routemap')
 const port = process.env.APP_PORT || 3000
 const sequelize = require('./config/sequelize')
 const customerRoutes = require('./routes/customer.routes')
-const todoRoutes = require('./routes/todos.routes')
-const otpModel = require('./models/otp.model')
+// const customer = require('./models/customer.model')
+// const wallet = require('./models/wallets.model')
+// const service = require('./models/services.model')
+// const otp = require('./models/otp.model')
+// const tempCus = require('./models/customer_temp.model')
+
+// const transction = require('./models/transaction.model')
 
 app.use(express.json())
 app.use(customerRoutes)
-app.use(todoRoutes)
 app.get('/', (req, res) => {
   res.status(200).json({
     status: "success",
@@ -46,5 +50,16 @@ try {
   process.exit(1)
 }
 
+
+
+
+
+// not found routes
+app.use((req, res, next) => {
+  res.status(404).json({
+    status: 'error',
+    message: 'You got lost in the jungle'
+  })
+})
 
 

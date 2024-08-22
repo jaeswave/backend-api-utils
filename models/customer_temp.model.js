@@ -4,7 +4,7 @@ const {Sequelize, DataTypes} = require("sequelize")
 const sequelize = require('../config/sequelize')
 
 
-const Customers = sequelize.define("Customer", 
+const TemporaryCustomers = sequelize.define("TemporaryCustomer", 
     {
     sn: {
         type: DataTypes.INTEGER,
@@ -64,4 +64,4 @@ const Customers = sequelize.define("Customer",
 })
 
 
-module.exports = { Customers }
+module.exports = { TemporaryCustomers }

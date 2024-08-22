@@ -8,6 +8,7 @@ const data = {
     errorStatus: "error",
     customerUpdated: "Customer updated successfully",
     todoSuccess: "Todo fetched successfully",
+    customerNotExist: "Customer does not exist",
 }
 
 

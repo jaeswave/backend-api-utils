@@ -1,9 +1,10 @@
 
+
 const {Sequelize, DataTypes} = require("sequelize")
 const sequelize = require('../config/sequelize')
 
 
-const Todo = sequelize.define("Todo", 
+const Wallets = sequelize.define("Wallet", 
     {
     sn: {
         type: DataTypes.INTEGER,
@@ -11,44 +12,27 @@ const Todo = sequelize.define("Todo",
         allowNull: false,
         primaryKey: true
     },
-    todo_id:{
+    wallet_id: {
         type: DataTypes.STRING,
         allowNull: false,
-        uniqueKey: true
+        unique: true
     },
-    
     customer_id: {
         type: DataTypes.STRING,
         allowNull: false,
-        uniqueKey: true,
-        references: {
+        references:{
             model: 'Customers',
             key: 'customer_id'
-        }
-
+          }
     },
-    todo_name:{
-        type: DataTypes.STRING,
-        allowNull: false
-    },
-    todo_description:{
-        type: DataTypes.TEXT,
-        allowNull: true
-
-    },
-    status: {
-        type: DataTypes.ENUM('pending', 'completed'),
+    amount: {
+        type: DataTypes.DECIMAL,
         allowNull: false,
-        defaultValue: 'pending'
-    },
-    is_deleted : {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false
+        defaultValue: 0.00
     },
     created_at: {
       type: DataTypes.STRING,
-      
+    
     },
     modified_at: {
       type: DataTypes.STRING
@@ -58,7 +42,8 @@ const Todo = sequelize.define("Todo",
   timestamps: false,
   createdAt: false,
   updatedAt: false  
+  
 })
 
 
-module.exports = { Todo }
+module.exports = { Wallets }
