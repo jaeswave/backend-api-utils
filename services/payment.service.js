@@ -20,6 +20,17 @@ return axios({
 }
 
 
+const verifyPayment = async(reference) => {
+    return axios({
+        method: 'get',
+        url: `https://api.paystack.co/transaction/verify/${reference}`,
+        headers: {
+            Authorization: `Bearer ${process.env.PAYSTACK_API_SECRET_KEY}`
+        }
+    });
+}
+
 module.exports = {
-    initializePayment
+    initializePayment,
+    verifyPayment
 }

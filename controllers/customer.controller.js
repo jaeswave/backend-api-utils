@@ -8,8 +8,10 @@ const data  = require('../messages')
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Wallets } = require('../models/wallets.model');
-const { initializePayment } =  require('../services/payment.service')
+const { initializePayment, verifyPayment } =  require('../services/payment.service')
+const { Transactions } = require('../models/transaction.model')
 const ONE_HOUR = '1h'
+const NAIRA_CONVERSION = 100
 
 const createCustomer = async(req, res) => {
 
@@ -17,7 +19,7 @@ const createCustomer = async(req, res) => {
 
     const { surname, othernames, email, password } = req.body
     const { error } = createCustomerValidation(req.body)
-    if (error != undefined) throw new Error(error.details[0].message) 
+    if (error != undefined) throw new Error(error.details[0].message || "Something went wrong") 
      const checkIfEmailExist = await Customers.findOne({where:{ email: email} })
  
     if(checkIfEmailExist != null ) throw new Error(data.customerExist)
@@ -80,9 +82,9 @@ const verifyEmail = async(req, res) => {
         await Wallets.create({
             wallet_id: uuidv4(),
             customer_id: customerTemp.customer_id,
-            amount: 0.00
+            amount: 0.00 //
         }) 
-        
+
          //delete from the otp table
          await Otp.destroy({
             where: {
@@ -122,12 +124,13 @@ const login = async(req, res) => {
     const match = await bcrypt.compare(password, customer.hash);
     if(!match) throw new Error('Invalid email or password')
     
-    const token = jwt.sign({ email: email }, process.env.JWT_SECRET, { expiresIn: ONE_HOUR });
-    
-   res.setHeader('access_token', token) 
+    const token = jwt.sign({ _id: uuidv4(), email: email }, process.env.JWT_SECRET, { expiresIn: ONE_HOUR });
+ 
+    res.setHeader('access_token', token) 
     res.status(200).json({
         status: data.successStatus,
-        message: 'Login successful'
+        message: 'Login successful',
+        data: getCustomer
     })
 
     }catch(error){
@@ -137,17 +140,15 @@ const login = async(req, res) => {
         })
     }   
 }
-
-
-
+ 
 const updateCustomer = async(req, res) => { 
     //assignment
     try{
-    const { customer_id } = req.params
+    const { customer_id } = req.params // passed from the authorization middleware
     const data = req.body
     //validate 
     const { error } = updateCustomerValidation(req.body)
-    if (error != undefined) throw new Error(error.details[0].message)
+    if (error != undefined) throw new Error(error.details[0].message || "Something went wrong")
     await Customers.update(req.body, {
             where: {
             customer_id: customer_id,
@@ -170,15 +171,43 @@ const updateCustomer = async(req, res) => {
 
  }
 
+ const getCustomer = async(req, res) => {
+    try{
+        const { customer_id } = req.params // passed from the authorization middleware
+        const customer = await Customers.findOne({where:{ customer_id: customer_id}, attributes: { exclude: ['sn', 'hash', 'salt', 'customer_id', 'created_at', 'modified_at'] } })
+        if(customer == null ) throw new Error(data.customerNotExist)
+
+        res.status(200).json({  
+            status: data.successStatus,
+            message: data.customerFound,
+            data: customer
+        })
+    }catch(error){
+        res.status(400).json({
+            status: data.errorStatus,
+            message: error.message
+        })
+    }
+ }
+
+ /**
+  * We decided not to initiate the payment trasactionin the tabele at the initiaize stage
+  * We will only insert into the transaction table when the payment is completed
+  * This is to avoid inserting into the transaction table when the payment fails
+  * And also to avoid inserting into the transaction table when the payment is not completed
+  * So we inserted during the completion stage
+  * 
+  */
 
  const startWalletFunding = async(req, res) => {  
     try{
-        const { amount, email } = req.body
+        const { email, customer_id } = req.params // passed from the authorization
+        const { amount } = req.body
         if(amount < 1000) throw new Error('Amount must be greater than 1000')
         const response = await initializePayment(email, amount)
-        console.log(response)
+
         res.status(200).json({
-            status: true,
+            status: data.successStatus,
             message: "Payment initialized successfully",
             data: {
                 payment_url : response.data.data.authorization_url,
@@ -198,10 +227,97 @@ const updateCustomer = async(req, res) => {
 
 
 
+const completeWalletFunding = async(req, res) => {
+
+  try{
+    const { customer_id, email } = req.params // passed from the authorization
+    const { reference } = req.params
+
+    const transaction = await Transactions.findOne({where:{ payment_reference: reference, status: "completed"} })
+    if(transaction != null ) throw new Error('Invalid transaction')
+
+    const response = await verifyPayment(reference)
+
+    if(response.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
+
+    const getWallet = await Wallets.findOne({where:{ customer_id: customer_id} })
+
+    await Transactions.create({
+        transaction_id: uuidv4(),
+        customer_id: customer_id,
+        wallet_id: getWallet.wallet_id,
+        payment_reference: reference,
+        email: email,
+        description: 'Wallet funding',
+        transaction_type: 'credit',
+        service: 'wallet',
+        payment_means: 'others',
+        amount: response.data.data.amount / NAIRA_CONVERSION,
+        status: 'completed'
+    })
+    const updatedAmount =   Number(getWallet.amount) + (response.data.data.amount / NAIRA_CONVERSION)
+
+    await  Wallets.update({ amount:updatedAmount }, {
+        where: {
+            customer_id: customer_id
+        }
+    })
+   
+
+    res.status(200).json({
+        status: data.successStatus,
+        message: "Wallet successfully funded"
+    })
+  }catch(error){
+    res.status(400).json({
+        status: "error",
+        message: error.message
+    })
+  }
+
+    
+
+
+    
+}
+
+
+const getWallet= async(req, res) => {
+
+  try{
+    const { customer_id, email } = req.params // passed from the authorization
+
+    const wallet = await Wallets.findOne({where:{ customer_id: customer_id}, attributes: { exclude: ['sn', 'customer_id', 'created_at', 'modified_at'] } })
+
+    const transaction = await Transactions.findAll( { where:{ email: email}, attributes: { exclude: ['sn', 'customer_id', 'wallet_id', 'modified_at'] },  limit: 2 })
+    //limit and sort
+
+    res.status(200).json({
+        status: data.successStatus,
+        message: data.walletFound,
+        data: {
+            wallet: wallet,
+            transactions: transaction
+        }
+    })
+  }catch(error){
+    res.status(400).json({
+        status: "error",
+        message: error.message
+    })
+  }
+
+}
+
+
+
 module.exports = {
     createCustomer,
     updateCustomer,
     verifyEmail,
     login,
-    startWalletFunding
+    startWalletFunding,
+    getCustomer,
+    completeWalletFunding,
+    getWallet
 }

@@ -66,6 +66,10 @@ const Transactions = sequelize.define("Transaction",
         type: DataTypes.ENUM,
         values: ['wallet', 'others']
     },
+    payment_reference: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
     created_at: {
       type: DataTypes.STRING,
     

@@ -9,6 +9,7 @@ const data = {
     customerUpdated: "Customer updated successfully",
     todoSuccess: "Todo fetched successfully",
     customerNotExist: "Customer does not exist",
+    customerFound: "Customer found",
 }
 
 
