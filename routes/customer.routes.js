@@ -1,6 +1,8 @@
 const express = require('express')
 const router = express.Router()
-const { createCustomer, updateCustomer, verifyEmail, login, startWalletFunding, getCustomer, completeWalletFunding, getWallet } = require('../controllers/customer.controller')
+const { createCustomer, updateCustomer, verifyEmail, login, 
+    startWalletFunding, getCustomer, completeWalletFunding, 
+    getWallet, getAllServices, purchaseAirtime,  purchaseService, getAirtimeOperators } = require('../controllers/customer.controller')
 const { authorization } = require('../middleware/authorisation')
 
 router.post('/customer', createCustomer); 
@@ -18,6 +20,12 @@ router.post('/customer/wallet-funding/start', authorization, startWalletFunding)
 router.post('/customer/wallet-funding/complete/:reference', authorization, completeWalletFunding);
 
 router.get('/customer/wallet', authorization, getWallet);
+
+router.get('/services', authorization, getAllServices);
+
+router.post('/purchase' , authorization, purchaseAirtime); //purchaseService
+
+router.get('/airtime-operators', authorization, getAirtimeOperators);
 
 
 module.exports = router;

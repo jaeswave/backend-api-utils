@@ -10,8 +10,7 @@ const customerRoutes = require('./routes/customer.routes')
 // const service = require('./models/services.model')
 // const otp = require('./models/otp.model')
 // const tempCus = require('./models/customer_temp.model')
-
-// const transction = require('./models/transaction.model')
+//const transction = require('./models/transaction.model')
 
 app.use(express.json())
 app.use(customerRoutes)

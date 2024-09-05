@@ -6,12 +6,18 @@ const {hashPassword, generateOtp} = require('../utils')
 const { v4: uuidv4 } = require('uuid');
 const data  = require('../messages')
 const bcrypt = require('bcrypt');
+const  sequelize  = require('../config/sequelize')
 const jwt = require('jsonwebtoken');
 const { Wallets } = require('../models/wallets.model');
+const { Services } = require('../models/services.model')
 const { initializePayment, verifyPayment } =  require('../services/payment.service')
+const { buyAirtime } = require('../services/reloadly.service')
 const { Transactions } = require('../models/transaction.model')
+const { operators } = require('../services/reloadly.service')
 const ONE_HOUR = '1h'
 const NAIRA_CONVERSION = 100
+const {paymentMeans} = require('../enum')
+const { debitWallet, creditWallet } = require('../utils')
 
 const createCustomer = async(req, res) => {
 
@@ -68,6 +74,9 @@ const verifyEmail = async(req, res) => {
         const customerTemp = await TemporaryCustomers.findOne({where:{ email: email} })
         if(customerTemp == null ) throw new Error(data.customerNotExist)
     
+    //start a database transaction
+   await sequelize.transaction( async(t) => {
+
         //insert into the customers table
         await Customers.create({
             customer_id: customerTemp.customer_id,
@@ -77,28 +86,27 @@ const verifyEmail = async(req, res) => {
             hash: customerTemp.hash,
             salt: customerTemp.salt,
             is_email_verified: true
-        })
+        }, {transaction: t})
         //insert into the wallets table
         await Wallets.create({
             wallet_id: uuidv4(),
             customer_id: customerTemp.customer_id,
             amount: 0.00 //
-        }) 
-
-         //delete from the otp table
+        }, {transaction: t}) 
+        //delete from the otp table
          await Otp.destroy({
             where: {
                 email: email
             }
-        })
+        }, {transaction: t})
         //delete from the customerTemp table
         await TemporaryCustomers.destroy({
             where: {
                 email: email
             }
-        })
-       
+        }, {transaction: t})
 
+    })
 
         res.status(200).json({
             status: data.successStatus,
@@ -108,7 +116,7 @@ const verifyEmail = async(req, res) => {
     }catch(error){
         res.status(400).json({
             status: "error",
-            message: error.message
+            message: error.message || "Something went wrong, try again later"
         })
     }
     
@@ -225,8 +233,6 @@ const updateCustomer = async(req, res) => {
   }
 }
 
-
-
 const completeWalletFunding = async(req, res) => {
 
   try{
@@ -240,27 +246,30 @@ const completeWalletFunding = async(req, res) => {
 
     if(response.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
 
-    const getWallet = await Wallets.findOne({where:{ customer_id: customer_id} })
+     await sequelize.transaction(async t => {
+    
+        const getWallet = await Wallets.findOne({where:{ customer_id: customer_id} }, {transaction: t})
 
-    await Transactions.create({
-        transaction_id: uuidv4(),
-        customer_id: customer_id,
-        wallet_id: getWallet.wallet_id,
-        payment_reference: reference,
-        email: email,
-        description: 'Wallet funding',
-        transaction_type: 'credit',
-        service: 'wallet',
-        payment_means: 'others',
-        amount: response.data.data.amount / NAIRA_CONVERSION,
-        status: 'completed'
-    })
-    const updatedAmount =   Number(getWallet.amount) + (response.data.data.amount / NAIRA_CONVERSION)
+        await Transactions.create({
+            transaction_id: uuidv4(),
+            customer_id: customer_id,
+            wallet_id: getWallet.wallet_id,
+            payment_reference: reference,
+            email: email,
+            description: 'Wallet funding',
+            transaction_type: 'credit',
+            service: 'wallet',
+            payment_means: 'others',
+            amount: response.data.data.amount / NAIRA_CONVERSION,
+            status: 'completed'
+        }, {transaction: t})
+        const updatedAmount =   Number(getWallet.amount) + (response.data.data.amount / NAIRA_CONVERSION)
 
-    await  Wallets.update({ amount:updatedAmount }, {
-        where: {
-            customer_id: customer_id
-        }
+        await  Wallets.update({ amount:updatedAmount }, {
+            where: {
+                customer_id: customer_id
+            }
+        }, {transaction: t})
     })
    
 
@@ -281,7 +290,6 @@ const completeWalletFunding = async(req, res) => {
     
 }
 
-
 const getWallet= async(req, res) => {
 
   try{
@@ -289,7 +297,7 @@ const getWallet= async(req, res) => {
 
     const wallet = await Wallets.findOne({where:{ customer_id: customer_id}, attributes: { exclude: ['sn', 'customer_id', 'created_at', 'modified_at'] } })
 
-    const transaction = await Transactions.findAll( { where:{ email: email}, attributes: { exclude: ['sn', 'customer_id', 'wallet_id', 'modified_at'] },  limit: 2 })
+    const transaction = await Transactions.findAll( { where:{ email: email}, attributes: { exclude: [ 'customer_id', 'wallet_id', 'modified_at']}})
     //limit and sort
 
     res.status(200).json({
@@ -309,6 +317,134 @@ const getWallet= async(req, res) => {
 
 }
 
+const getAllServices = async(req, res) => {
+    try{
+        const allServices = await Services.findAll({attributes: { exclude: ['sn', 'created_at', 'modified_at'] } })
+        res.status(200).json({
+            status: data.successStatus,
+            message: "All services",
+            data: allServices
+        })
+
+    }catch(err){
+        res.status(400).json({
+            status: "error",
+            message: err.message || "Sorry, we cannot process your request at the moment"
+        })
+    }
+}
+
+
+const getAirtimeOperators = async(req, res) => {
+   try{
+    const allOps = await operators()
+   const filteredOpetaors = allOps.filter(op =>  op.data == false )
+
+    res.status(200).json({
+        status: data.successStatus,
+        message: "All operators",
+        data: filteredOpetaors
+    })
+   }catch(err){
+    res.status(400).json({
+        status: "error",
+        message: err.message || "Sorry, we cannot process your request at the moment"
+    })
+   }
+}
+
+const purchaseAirtime = async(req, res) => {
+    try{
+        const { customer_id, email } = req.params // passed from the authorization
+        const {  amount, operatorId, recipientPhone , payment_means } = req.body //ser
+        const service = "AIRTIME"
+        switch(payment_means){
+
+            case paymentMeans.WALLET:
+                const transaction_reference = await debitWallet(amount, customer_id, email, service)
+        
+                if(transaction_reference == null) throw new Error('Insufficient balance')
+            
+                const response = await buyAirtime(operatorId, amount, email, recipientPhone)
+                const isSuccess = Object.keys(response).includes('status')
+                if(!isSuccess) {
+                    //refund him 
+                    await creditWallet(amount, customer_id, email, 'Refund for failed airtime purchase')
+                    throw new Error('Airtime purchase failed')
+                }else{
+                    //update the transaction table
+                    await Transactions.update({ status: 'completed'}, {where: { payment_reference: transaction_reference}})
+                }
+                break;
+
+            case paymentMeans.OTHERS:
+                
+                break;
+            default:
+                throw new Error('Invalid payment means')
+             
+           
+            
+            
+        }
+
+
+        res.status(200).json({
+            status: data.successStatus,
+            message: "Airtime purchased successfully"
+        })
+    
+    }catch(error){
+        res.status(400).json({
+            status: "error",
+            message: error.message || "Sorry, we cannot process your request at the moment"
+        })
+    }
+}
+    
+
+const purchaseService = async(req, res) => {
+try{
+    const { customer_id, email } = req.params // passed from the authorization
+    const { service, amount, payment_means } = req.body //ser
+
+    if(payment_means === paymentMeans.WALLET){
+        //debit the customer wallet
+        const wallet = await Wallets.findOne({where:{ customer_id: customer_id} })
+        const canBuyService =  Number(wallet.amount) - amount
+
+        if(canBuyService  < 0) throw new Error('Insufficient balance')
+
+    }
+    
+    switch(service){
+        case 'AIRTIME':
+            const { operatorId, recipientPhone } = req.body //ser
+            break;
+        case 'DATA':
+            break;
+        case 'service3':
+            break;
+        case 'service4':
+            break;
+        default:
+
+    }
+
+
+
+    res.status(200).json({
+        status: data.successStatus,
+        message: "Service purchased successfully"
+    })
+
+}catch(error){
+    res.status(400).json({
+        status: "error",
+        message: error.message || "Sorry, we cannot process your request at the moment"
+    })
+}
+}
 
 
 module.exports = {
@@ -319,5 +455,9 @@ module.exports = {
     startWalletFunding,
     getCustomer,
     completeWalletFunding,
-    getWallet
+    getWallet,
+    getAllServices,
+    getAirtimeOperators,
+    purchaseService,
+    purchaseAirtime
 }
