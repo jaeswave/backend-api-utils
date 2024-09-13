@@ -2,7 +2,8 @@ const express = require('express')
 const router = express.Router()
 const { createCustomer, updateCustomer, verifyEmail, login, 
     startWalletFunding, getCustomer, completeWalletFunding, 
-    getWallet, getAllServices, purchaseAirtime,  purchaseService, getAirtimeOperators } = require('../controllers/customer.controller')
+    getWallet, getAllServices, purchaseAirtime, purchaseData, 
+     purchaseService, getOperators } = require('../controllers/customer.controller')
 const { authorization } = require('../middleware/authorisation')
 
 router.post('/customer', createCustomer); 
@@ -25,7 +26,9 @@ router.get('/services', authorization, getAllServices);
 
 router.post('/purchase' , authorization, purchaseAirtime); //purchaseService
 
-router.get('/airtime-operators', authorization, getAirtimeOperators);
+router.post('/purchase-data' , authorization, purchaseData)
+
+router.get('/operators', authorization, getOperators);
 
 
 module.exports = router;

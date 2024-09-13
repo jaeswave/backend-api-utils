@@ -17,7 +17,7 @@ const { operators } = require('../services/reloadly.service')
 const ONE_HOUR = '1h'
 const NAIRA_CONVERSION = 100
 const {paymentMeans} = require('../enum')
-const { debitWallet, creditWallet } = require('../utils')
+const { debitWallet, creditWallet, checkTransactionStatus } = require('../utils')
 
 const createCustomer = async(req, res) => {
 
@@ -239,7 +239,7 @@ const completeWalletFunding = async(req, res) => {
     const { customer_id, email } = req.params // passed from the authorization
     const { reference } = req.params
 
-    const transaction = await Transactions.findOne({where:{ payment_reference: reference, status: "completed"} })
+    const transaction = await checkTransactionStatus(reference)
     if(transaction != null ) throw new Error('Invalid transaction')
 
     const response = await verifyPayment(reference)
@@ -335,15 +335,24 @@ const getAllServices = async(req, res) => {
 }
 
 
-const getAirtimeOperators = async(req, res) => {
+const getOperators = async(req, res) => {
    try{
+    const operatorType = Boolean(req.query.data) || null
+    let filteredOperators = null
     const allOps = await operators()
-   const filteredOpetaors = allOps.filter(op =>  op.data == false )
+    if(operatorType == true){
+          //data operators
+         filteredOperators = allOps.filter(op =>  op.data == true || op.bundle == true)
 
+    }else{
+        //airtime operators
+        filteredOperators = allOps.filter(op =>  op.data == false && op.bundle == false && !op.name.includes('Bundle'))
+    }
+    
     res.status(200).json({
         status: data.successStatus,
         message: "All operators",
-        data: filteredOpetaors
+        data: filteredOperators
     })
    }catch(err){
     res.status(400).json({
@@ -361,31 +370,31 @@ const purchaseAirtime = async(req, res) => {
         switch(payment_means){
 
             case paymentMeans.WALLET:
-                const transaction_reference = await debitWallet(amount, customer_id, email, service)
+                const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Airtime Purchase")
         
                 if(transaction_reference == null) throw new Error('Insufficient balance')
-            
-                const response = await buyAirtime(operatorId, amount, email, recipientPhone)
-                const isSuccess = Object.keys(response).includes('status')
-                if(!isSuccess) {
-                    //refund him 
-                    await creditWallet(amount, customer_id, email, 'Refund for failed airtime purchase')
-                    throw new Error('Airtime purchase failed')
-                }else{
-                    //update the transaction table
-                    await Transactions.update({ status: 'completed'}, {where: { payment_reference: transaction_reference}})
-                }
+                const response = await processAirtimePurchase(customer_id,operatorId, amount, email, recipientPhone, payment_means, transaction_reference)
+                if(!response) throw new Error("Airtime Purchase failed") 
                 break;
-
             case paymentMeans.OTHERS:
+                const  { reference } = req.body
+                if(!reference) throw new Error("Invalid Reference")
+                const transaction = await checkTransactionStatus(reference) //check if transaction reference has not been used on our system
+                
+                if(transaction != null ) throw new Error('Invalid transaction')
+                
+                const verifyPaymentReference = await verifyPayment(reference)
+                if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
+                
+                let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
+                const response2 = await processAirtimePurchase(customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, reference)
+                if(!response2) throw new Error("Airtime Purchase failed") 
+
                 
                 break;
             default:
                 throw new Error('Invalid payment means')
-             
-           
-            
-            
+               
         }
 
 
@@ -398,6 +407,62 @@ const purchaseAirtime = async(req, res) => {
         res.status(400).json({
             status: "error",
             message: error.message || "Sorry, we cannot process your request at the moment"
+        })
+    }
+}
+
+const purchaseData = async (req, res) => {
+    try{
+        const { customer_id, email } = req.params // passed from the authorization
+        const { amount, operatorId, recipientPhone , payment_means } = req.body //ser
+        const service = "DATA SUBSCRIPTION"
+
+        switch(payment_means){
+
+            case paymentMeans.WALLET:
+                const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Data Subscription")
+        
+                if(transaction_reference == null) throw new Error('Insufficient balance')
+                const response = await processAirtimeOrDataPurchase(customer_id,operatorId, amount, email, recipientPhone, payment_means, transaction_reference)
+                if(!response) throw new Error("Data Subscription Purchase failed") 
+                break;
+            case paymentMeans.OTHERS:
+                const  { reference } = req.body
+                if(!reference) throw new Error("Invalid Reference")
+                const transaction = await checkTransactionStatus(reference) //check if transaction reference has not been used on our system
+                
+                if(transaction != null ) throw new Error('Invalid transaction')
+                
+                const verifyPaymentReference = await verifyPayment(reference)
+                if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
+                
+                let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
+                const response2 = await processAirtimeOrDataPurchase(customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, reference)
+                if(!response2) throw new Error("Airtime Purchase failed") 
+
+                
+                break;
+            default:
+                throw new Error('Invalid payment means')
+               
+        }
+
+
+        res.status(200).json({
+            status: data.successStatus,
+            message: "Airtime purchased successfully"
+        })
+
+        
+        res.status(200).json({
+            status: "success",
+            message: "Data successfully purchased"
+        })
+
+    }catch(err){
+        res.status(400).json({
+            status: "error",
+            message: err.message
         })
     }
 }
@@ -447,6 +512,43 @@ try{
 }
 
 
+
+
+
+
+
+
+async function processAirtimeOrDataPurchase (customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, transaction_reference) {
+    const response = await buyAirtime(operatorId, amountToBePurchased, email, recipientPhone)
+    const isSuccess = Object.keys(response).includes('status')
+    if(!isSuccess) {
+        //refund him 
+        if(payment_means == paymentMeans.WALLET){ //only credit wallet back whne payment is only wallet
+             await creditWallet(amount, customer_id, email, 'Refund for failed airtime purchase')
+        }
+        return false
+    }else{
+        //update the transaction table
+        if(payment_means == paymentMeans.WALLET){
+        await Transactions.update({ status: 'completed'}, {where: { payment_reference: transaction_reference}})
+        }else{
+            await Transactions.create({
+                transaction_id: uuidv4(),
+                wallet_id: null,
+                amount: amountToBePurchased,
+                description: 'Airtime purchase',
+                email: email,
+                transaction_type: 'debit',
+                status: 'completed',
+                service: 'AIRTIME',
+                payment_means: paymentMeans.OTHERS,
+                payment_reference: transaction_reference
+            })
+        }
+        return true
+    }
+}
+
 module.exports = {
     createCustomer,
     updateCustomer,
@@ -457,7 +559,8 @@ module.exports = {
     completeWalletFunding,
     getWallet,
     getAllServices,
-    getAirtimeOperators,
+    getOperators,
     purchaseService,
-    purchaseAirtime
+    purchaseAirtime,
+    purchaseData
 }

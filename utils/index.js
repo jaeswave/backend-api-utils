@@ -36,7 +36,7 @@ const comparePassword = (password, hash) => {
 }
 
 
-const debitWallet = async (amt, customer_id, email, service) => {
+const debitWallet = async (amt, customer_id, email, service, description) => {
  try{
 
 
@@ -54,7 +54,7 @@ const debitWallet = async (amt, customer_id, email, service) => {
             transaction_id: uuidv4(),
             wallet_id: wallet.wallet_id,
             amount: amt,
-            description: "Wallet Debit for Airtime Purchase",
+            description: description,
             email: email,
             transaction_type: 'debit',
             status: 'pending',
@@ -106,9 +106,17 @@ const creditWallet = async (amt, customer_id, email, description) => {
    } 
 
 
+const checkTransactionStatus = async(reference)=>{
+    return  await Transactions.findOne({where:{ payment_reference: reference, status: "completed"} })
+
+   
+}
+
+
 module.exports = {
     generateOtp,
     hashPassword,
     debitWallet,
-    creditWallet
+    creditWallet,
+    checkTransactionStatus
 }
