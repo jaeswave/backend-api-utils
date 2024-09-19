@@ -3,8 +3,9 @@ const router = express.Router()
 const { createCustomer, updateCustomer, verifyEmail, login, 
     startWalletFunding, getCustomer, completeWalletFunding, 
     getWallet, getAllServices, purchaseAirtime, purchaseData, 
-     purchaseService, getOperators } = require('../controllers/customer.controller')
-const { authorization } = require('../middleware/authorisation')
+     purchaseService, getOperators, getUtilityBillers } = require('../controllers/customer.controller')
+const { authorization } = require('../middleware/authorisation');
+const { buyUtilityBills } = require('../services/reloadly.service');
 
 router.post('/customer', createCustomer); 
 
@@ -29,6 +30,10 @@ router.post('/purchase' , authorization, purchaseAirtime); //purchaseService
 router.post('/purchase-data' , authorization, purchaseData)
 
 router.get('/operators', authorization, getOperators);
+
+router.get('/billers', authorization, getUtilityBillers);
+
+router.post('/buy-utility', authorization, buyUtilityBills)
 
 
 module.exports = router;

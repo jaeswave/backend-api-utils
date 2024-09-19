@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const saltRound = 10   
 const { Wallets } = require('../models/wallets.model')
 const { Transactions } = require('../models/transaction.model')
+const { Customers } = require('../models/customer.model')
 const { v4: uuidv4 } = require('uuid');
 const {paymentMeans} = require('../enum')
 const  sequelize  = require('../config/sequelize');
@@ -82,7 +83,7 @@ const creditWallet = async (amt, customer_id, email, description) => {
            await sequelize.transactions(async (t) => {
    
          //credit the wallet and update the amount with the new value in sequelize
-           const wallet = await Wallets.findOne({where: {customer_id}}, {transaction: t})
+           const wallet =  await Wallets.findOne({where: {customer_id}}, {transaction: t})
            const newBalance =  Number(wallet.amount) + amt
            await Transactions.create({
                transaction_id: uuidv4(),
@@ -113,10 +114,18 @@ const checkTransactionStatus = async(reference)=>{
 }
 
 
+const getWalletDetailByEmail = async(email) => {
+    const getDetails = await Customers.findOne({where: {email: email}})
+
+    return getDetails.customer_id
+}
+
+
 module.exports = {
     generateOtp,
     hashPassword,
     debitWallet,
     creditWallet,
-    checkTransactionStatus
+    checkTransactionStatus,
+    getWalletDetailByEmail
 }

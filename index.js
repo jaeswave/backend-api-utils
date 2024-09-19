@@ -11,9 +11,12 @@ const customerRoutes = require('./routes/customer.routes')
 // const otp = require('./models/otp.model')
 // const tempCus = require('./models/customer_temp.model')
 //const transction = require('./models/transaction.model')
+const cron = require('node-cron')
+const {crawlAndUpdateUtilityStatus} = require('./controllers/customer.controller')
 
 app.use(express.json())
 app.use(customerRoutes)
+
 app.get('/', (req, res) => {
   res.status(200).json({
     status: "success",
@@ -31,6 +34,15 @@ try {
     app.listen(port, () => {
       displayRoutes(app)
       console.log(`Example app listening on port ${port}`)
+
+      cron.schedule('* * * * *', () => {
+        console.log('running a task every minute');
+        crawlAndUpdateUtilityStatus()
+       
+      });
+      
+
+
     })
   })()
 

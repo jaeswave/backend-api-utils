@@ -11,13 +11,14 @@ const jwt = require('jsonwebtoken');
 const { Wallets } = require('../models/wallets.model');
 const { Services } = require('../models/services.model')
 const { initializePayment, verifyPayment } =  require('../services/payment.service')
-const { buyAirtime } = require('../services/reloadly.service')
+const { buyAirtime, getBillers, checkUtiltityTransactionStatus } = require('../services/reloadly.service')
 const { Transactions } = require('../models/transaction.model')
 const { operators } = require('../services/reloadly.service')
 const ONE_HOUR = '1h'
 const NAIRA_CONVERSION = 100
 const {paymentMeans} = require('../enum')
 const { debitWallet, creditWallet, checkTransactionStatus } = require('../utils')
+const { sendEmail } = require('../services/email.service')
 
 const createCustomer = async(req, res) => {
 
@@ -373,7 +374,7 @@ const purchaseAirtime = async(req, res) => {
                 const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Airtime Purchase")
         
                 if(transaction_reference == null) throw new Error('Insufficient balance')
-                const response = await processAirtimePurchase(customer_id,operatorId, amount, email, recipientPhone, payment_means, transaction_reference)
+                const response = await processAirtimeOrDataPurchase(customer_id,operatorId, amount, email, recipientPhone, payment_means, transaction_reference)
                 if(!response) throw new Error("Airtime Purchase failed") 
                 break;
             case paymentMeans.OTHERS:
@@ -387,7 +388,7 @@ const purchaseAirtime = async(req, res) => {
                 if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
                 
                 let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
-                const response2 = await processAirtimePurchase(customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, reference)
+                const response2 = await processAirtimeOrDataPurchase(customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, reference)
                 if(!response2) throw new Error("Airtime Purchase failed") 
 
                 
@@ -423,6 +424,7 @@ const purchaseData = async (req, res) => {
                 const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Data Subscription")
         
                 if(transaction_reference == null) throw new Error('Insufficient balance')
+               
                 const response = await processAirtimeOrDataPurchase(customer_id,operatorId, amount, email, recipientPhone, payment_means, transaction_reference)
                 if(!response) throw new Error("Data Subscription Purchase failed") 
                 break;
@@ -446,13 +448,6 @@ const purchaseData = async (req, res) => {
                 throw new Error('Invalid payment means')
                
         }
-
-
-        res.status(200).json({
-            status: data.successStatus,
-            message: "Airtime purchased successfully"
-        })
-
         
         res.status(200).json({
             status: "success",
@@ -467,6 +462,79 @@ const purchaseData = async (req, res) => {
     }
 }
     
+
+const getUtilityBillers = async (req, res) => {
+try {
+    const billers_type = req.query.billers_type || ''
+    const feedback = await getBillers(billers_type)
+   
+    res.status(200).json({
+        status: data.successStatus,
+        message: "Billers successfully fetched...",
+        data: feedback.data.content
+    })
+    
+} catch (err) {
+       
+    res.status(500).json({
+        status: "error",
+        message: err.message
+    })
+}
+
+}
+
+
+const buyUtilityBills = async() => {
+
+  try {
+    const { customer_id, email } = req.params // passed from the authorization
+    const { subscriberAccountNumber, amount, billerId , description, payment_means } = req.body
+    const service = 'UTILITY'
+
+    switch(payment_means){
+
+        case paymentMeans.WALLET:
+            const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Utility Purchase")
+    
+            if(transaction_reference == null) throw new Error('Insufficient balance')
+            const response = await processUtilityPurchase(customer_id,billerId, amount, email, subscriberAccountNumber, payment_means, transaction_reference)
+            if(!response) throw new Error("Airtime Purchase failed") 
+            break;
+        case paymentMeans.OTHERS:
+            const  { reference } = req.body
+            if(!reference) throw new Error("Invalid Reference")
+            const transaction = await checkTransactionStatus(reference) //check if transaction reference has not been used on our system
+            
+            if(transaction != null ) throw new Error('Invalid transaction')
+            
+            const verifyPaymentReference = await verifyPayment(reference)
+            if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
+            
+            let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
+            const response2 = await processUtilityPurchase(customer_id,billerId, amount, email, subscriberAccountNumber, payment_means, transaction_reference)
+            if(!response2) throw new Error("Airtime Purchase failed") 
+
+            
+            break;
+        default:
+            throw new Error('Invalid payment means')
+           
+    }
+
+    res.status(200).json({
+        status: data.successStatus,
+        message: "Utiltity in process, we will hit up once we are done..."
+    })
+    
+    
+  } catch (error) {
+    
+  }
+
+
+}
+
 
 const purchaseService = async(req, res) => {
 try{
@@ -530,7 +598,7 @@ async function processAirtimeOrDataPurchase (customer_id, operatorId, amountToBe
     }else{
         //update the transaction table
         if(payment_means == paymentMeans.WALLET){
-        await Transactions.update({ status: 'completed'}, {where: { payment_reference: transaction_reference}})
+              await Transactions.update({ status: 'completed'}, {where: { payment_reference: transaction_reference}})
         }else{
             await Transactions.create({
                 transaction_id: uuidv4(),
@@ -549,6 +617,98 @@ async function processAirtimeOrDataPurchase (customer_id, operatorId, amountToBe
     }
 }
 
+
+
+
+
+
+
+
+async function processUtilityPurchase (payment_means, transaction_reference, customer_id,subscriberAccountNumber, billerId, amount, email, amountId=null, description) {
+    const response = await buyUtilityBills(amountId,subscriberAccountNumber, amount, billerId , description)
+   // const isSuccess = Object.keys(response).includes('status') && (response.data.status =='PROCESSING' || response.data.status == 'SUCCESSFUL')
+        //update the transaction table
+        if(payment_means == paymentMeans.WALLET){
+              await Transactions.update({ transaction_id: response.data.referenceId}, {where: { payment_reference: transaction_reference}})
+        }else{
+            await Transactions.create({
+                transaction_id: response.data.referenceId,
+                wallet_id: null,
+                amount: amount,
+                description: 'Utiltity purchase',
+                email: email,
+                transaction_type: 'debit',
+                status: 'pending',
+                service: 'UTILITY',
+                payment_means: paymentMeans.OTHERS,
+                payment_reference: transaction_reference
+            })
+        }
+        return true
+    
+}
+
+const crawlAndUpdateUtilityStatus = async() => {
+
+    
+    try {
+
+        const response = await Transactions.findAll({ where: { status: 'pending', service: 'UTILITY' }  })
+
+        if(!response.length) {
+            console.log("nothing to do")
+            return 
+        }
+
+        response.data.forEach( async item => {
+
+        //go to reloadly to check the statu of that transaction
+           const transactionStatus =  await checkUtiltityTransactionStatus(item.transaction_id)
+           if(transactionStatus.data[0].transaction.status  == "SUCCESSFUL"){
+            //update our tranaction
+             await Transactions.update({ status: 'completed'}, {where: { transaction_id: item.transaction_id}})
+             //send teh details to teh customer
+             const billerType = transactionStatus[0].transaction.billDetails.type //ELECTRICITY_BILL_PAYMENT
+             const billerName = transactionStatus[0].transaction.billerName //woyofal Senegal
+             const subscriberNumber = transactionStatus[0].transaction.billDetails.subscriberDetails.accountNumber //14414354515
+             const pinDetails = transactionStatus[0].transaction.pinDetails
+
+             //send email
+             const message = `Your transaction was successful. Find the detaila below
+                              Biller: ${billerType} - Billername:  ${billerName} . 
+                              Your account is ${subscriberNumber} . Find below pin details 
+                              Token : ${pinDetails.token} - Value: ${pinDetails.info1}
+                              `
+                           
+             sendEmail(item.email, message, "Suceessful Bills Transaction") 
+             console.log("details sent to customer success")
+
+           }else if(transactionStatus.data[0].transaction.status  == "FAILED" 
+                    && item.payment_means == paymentMeans.WALLET){
+                        //refund the mooney
+                        const customerId = await getWalletDetailByEmail(email)
+                        await creditWallet(item.amount, customerId, item.email, "Wallet refund for failed Utility purchase")
+
+                        console.log("refunded success")
+
+           }else{
+            console.log("here")
+           }
+
+        })
+
+
+
+        
+    } catch (err) {
+        
+        res.status(400).json({
+            status: "error",
+            message: err.message
+        })
+    }
+}
+
 module.exports = {
     createCustomer,
     updateCustomer,
@@ -562,5 +722,7 @@ module.exports = {
     getOperators,
     purchaseService,
     purchaseAirtime,
-    purchaseData
+    purchaseData,
+    getUtilityBillers,
+    crawlAndUpdateUtilityStatus
 }

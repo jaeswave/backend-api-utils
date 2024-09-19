@@ -1,9 +1,9 @@
 
 const axios = require('axios');
 
-const getAccessToken = async () => {
+const getAccessToken = async (type='topups') => {
 
-   const response = await axios({
+    const response = await axios({
         method: "POST",
         url: "https://auth.reloadly.com/oauth/token",
         headers:{
@@ -13,7 +13,7 @@ const getAccessToken = async () => {
             "client_id": process.env.RELOADLY_CLIENT_ID,
             "client_secret": process.env.RELOADLY_CLIENT_SECRET,
             "grant_type": "client_credentials",
-            "audience": "https://topups-sandbox.reloadly.com"
+            "audience": `https://${type}-sandbox.reloadly.com`
           }
     })
 return  response.data.access_token
@@ -75,19 +75,76 @@ const buyAirtime = async(operatorId, amount, email, recipientPhone) => {
 
 }
 
-const buyData = () => {}
+const getBillers  = async(billers_type) => {
+    const token = await getAccessToken('utilities')
+    return axios({
+        method: "GET",
+        url: `https://utilities-sandbox.reloadly.com/billers?type=${billers_type}`,
+        headers:{
+            Accept: 'application/com.reloadly.utilities-v1+json',
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        }
+    })
 
 
 
-const buyUtilityBills = () => {}
 
+
+
+
+}
+
+
+const buyUtilityBills = async(amountId,subscriberAccountNumber, amount, billerId , description) => {
+
+const token = await getAccessToken('utilities')
+return axios({
+    method: "POST",
+    url: `https://utilities-sandbox.reloadly.com/pay`,
+    headers:{
+        Accept: 'application/com.reloadly.utilities-v1+json',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+    },
+    data: {
+        subscriberAccountNumber: subscriberAccountNumber,
+        amount: amount,
+        amountId: amountId,
+        billerId: billerId,
+        useLocalAmount: false,
+        referenceId: description, //'april-electricity-bill',
+       // additionalInfo: {invoiceId: null}
+      }
+})
+
+
+}
+
+
+const checkUtiltityTransactionStatus = async(id) => {
+
+    
+    const token = await getAccessToken('utilities')
+    return axios({
+        method: "POST",
+        url: `https://utilities-sandbox.reloadly.com/transactions/${id}`,
+        headers:{
+            Accept: 'application/com.reloadly.utilities-v1+json',
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+    })
+}
 const buyCableTV = () => {}
 
 
 module.exports = {
-    buyData,
     buyAirtime,
     buyUtilityBills,
     buyCableTV,
-    operators
+    operators,
+    getBillers,
+    checkUtiltityTransactionStatus
 }
+
