@@ -35,11 +35,11 @@ try {
       displayRoutes(app)
       console.log(`Example app listening on port ${port}`)
 
-      cron.schedule('* * * * *', () => {
-        console.log('running a task every minute');
-        crawlAndUpdateUtilityStatus()
+      // cron.schedule('* * * * *', () => {
+      //   console.log('running a task every minute');
+      //   crawlAndUpdateUtilityStatus()
        
-      });
+      // });
       
 
 

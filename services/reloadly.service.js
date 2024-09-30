@@ -127,7 +127,7 @@ const checkUtiltityTransactionStatus = async(id) => {
     
     const token = await getAccessToken('utilities')
     return axios({
-        method: "POST",
+        method: "GET",
         url: `https://utilities-sandbox.reloadly.com/transactions/${id}`,
         headers:{
             Accept: 'application/com.reloadly.utilities-v1+json',

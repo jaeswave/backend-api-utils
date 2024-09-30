@@ -37,7 +37,7 @@ const comparePassword = (password, hash) => {
 }
 
 
-const debitWallet = async (amt, customer_id, email, service, description) => {
+const debitWallet = async (amt, customer_id, email, service=null, description) => {
  try{
 
 
@@ -46,7 +46,7 @@ const debitWallet = async (amt, customer_id, email, service, description) => {
 
       //debit the wallet and update the amount with the new value in sequelize
 
-        const wallet = await Wallets.findOne({where: {customer_id}}, {transaction: t})
+        const wallet = await Wallets.findOne({where: {customer_id}, transaction: t})
         const walletBalance = Number(wallet.amount)
 
         if(walletBalance - amt < 0) throw new Error("Insufficient Balance")
@@ -63,7 +63,8 @@ const debitWallet = async (amt, customer_id, email, service, description) => {
             payment_means: paymentMeans.WALLET,
             payment_reference: transaction_reference
         }, {transaction: t})
-        await Wallets.update({amount: newBalance}, {where: {customer_id}}, {transaction: t})
+        
+        await Wallets.update({amount: newBalance}, {where: {customer_id}, transaction: t})
         
        
      
@@ -72,7 +73,7 @@ const debitWallet = async (amt, customer_id, email, service, description) => {
     return transaction_reference
 
  }catch(err){
-   
+    console.log("error: ", err)
      return null
  }
 }     
@@ -96,7 +97,7 @@ const creditWallet = async (amt, customer_id, email, description) => {
                payment_means: paymentMeans.WALLET,
                payment_reference: uuidv4()
            }, {transaction: t})
-           await Wallets.update({amount: newBalance}, {where: {customer_id}}, {transaction: t})
+           await Wallets.update({amount: newBalance}, {where: {customer_id}, transaction: t})
            
            return true
        })

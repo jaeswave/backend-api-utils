@@ -2,8 +2,9 @@ const express = require('express')
 const router = express.Router()
 const { createCustomer, updateCustomer, verifyEmail, login, 
     startWalletFunding, getCustomer, completeWalletFunding, 
-    getWallet, getAllServices, purchaseAirtime, purchaseData, 
-     purchaseService, getOperators, getUtilityBillers } = require('../controllers/customer.controller')
+    getWallet, getAllServices, 
+     purchaseService, getOperators, getBills , 
+     validateCustomerBillDetails} = require('../controllers/customer.controller')
 const { authorization } = require('../middleware/authorisation');
 const { buyUtilityBills } = require('../services/reloadly.service');
 
@@ -25,15 +26,20 @@ router.get('/customer/wallet', authorization, getWallet);
 
 router.get('/services', authorization, getAllServices);
 
-router.post('/purchase' , authorization, purchaseAirtime); //purchaseService
+router.get('/operators/:biller_code', authorization, getOperators);
 
-router.post('/purchase-data' , authorization, purchaseData)
+router.get('/bills-information/:biller_code', authorization, getBills);
 
-router.get('/operators', authorization, getOperators);
+router.get('/bills/:item_code/:biller_code/:customer_unique_no/validate', authorization, validateCustomerBillDetails);
 
-router.get('/billers', authorization, getUtilityBillers);
+router.post('/purchase' , authorization, purchaseService); //purchaseService
 
-router.post('/buy-utility', authorization, buyUtilityBills)
+// router.post('/purchase-data' , authorization, purchaseData)
+
+
+// router.get('/billers', authorization, getUtilityBillers);
+
+// router.post('/buy-utility', authorization, buyUtilityBills)
 
 
 module.exports = router;

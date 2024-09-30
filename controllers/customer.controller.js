@@ -19,6 +19,8 @@ const NAIRA_CONVERSION = 100
 const {paymentMeans} = require('../enum')
 const { debitWallet, creditWallet, checkTransactionStatus } = require('../utils')
 const { sendEmail } = require('../services/email.service')
+const { billsCategories, billersInformation, billsInformation,
+     validateBillDetails, creatBillPayment, billStatus } = require('../services/flutterwave.service')
 
 const createCustomer = async(req, res) => {
 
@@ -320,17 +322,19 @@ const getWallet= async(req, res) => {
 
 const getAllServices = async(req, res) => {
     try{
-        const allServices = await Services.findAll({attributes: { exclude: ['sn', 'created_at', 'modified_at'] } })
+       // const allServices = await Services.findAll({attributes: { exclude: ['sn', 'created_at', 'modified_at'] } })
+       const allServices = await billsCategories()
         res.status(200).json({
             status: data.successStatus,
             message: "All services",
-            data: allServices
+            data: allServices.data.data
         })
 
     }catch(err){
+       
         res.status(400).json({
             status: "error",
-            message: err.message || "Sorry, we cannot process your request at the moment"
+            message: err.response.data.message  || "Sorry, we cannot process your request at the moment"
         })
     }
 }
@@ -338,168 +342,265 @@ const getAllServices = async(req, res) => {
 
 const getOperators = async(req, res) => {
    try{
-    const operatorType = Boolean(req.query.data) || null
-    let filteredOperators = null
-    const allOps = await operators()
-    if(operatorType == true){
-          //data operators
-         filteredOperators = allOps.filter(op =>  op.data == true || op.bundle == true)
+    // const operatorType = Boolean(req.query.data) || null
+    // let filteredOperators = null
+    // const allOps = await operators()
+    // if(operatorType == true){
+    //       //data operators
+    //      filteredOperators = allOps.filter(op =>  op.data == true || op.bundle == true)
 
-    }else{
-        //airtime operators
-        filteredOperators = allOps.filter(op =>  op.data == false && op.bundle == false && !op.name.includes('Bundle'))
-    }
-    
+    // }else{
+    //     //airtime operators
+    //     filteredOperators = allOps.filter(op =>  op.data == false && op.bundle == false && !op.name.includes('Bundle'))
+    // }
+    const biller_code = req.params.biller_code || ''
+    const billers = await billersInformation(biller_code)
+    console.log("billers: ", billers.data)
+
     res.status(200).json({
         status: data.successStatus,
         message: "All operators",
-        data: filteredOperators
+        data: billers.data.data
     })
    }catch(err){
     res.status(400).json({
         status: "error",
-        message: err.message || "Sorry, we cannot process your request at the moment"
+        message: err.response.data.message || "Sorry, we cannot process your request at the moment"
     })
    }
 }
 
-const purchaseAirtime = async(req, res) => {
+const getBills = async(req, res) => {
     try{
-        const { customer_id, email } = req.params // passed from the authorization
-        const {  amount, operatorId, recipientPhone , payment_means } = req.body //ser
-        const service = "AIRTIME"
-        switch(payment_means){
-
-            case paymentMeans.WALLET:
-                const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Airtime Purchase")
-        
-                if(transaction_reference == null) throw new Error('Insufficient balance')
-                const response = await processAirtimeOrDataPurchase(customer_id,operatorId, amount, email, recipientPhone, payment_means, transaction_reference)
-                if(!response) throw new Error("Airtime Purchase failed") 
-                break;
-            case paymentMeans.OTHERS:
-                const  { reference } = req.body
-                if(!reference) throw new Error("Invalid Reference")
-                const transaction = await checkTransactionStatus(reference) //check if transaction reference has not been used on our system
-                
-                if(transaction != null ) throw new Error('Invalid transaction')
-                
-                const verifyPaymentReference = await verifyPayment(reference)
-                if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
-                
-                let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
-                const response2 = await processAirtimeOrDataPurchase(customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, reference)
-                if(!response2) throw new Error("Airtime Purchase failed") 
-
-                
-                break;
-            default:
-                throw new Error('Invalid payment means')
-               
-        }
-
-
+        const biller_code = req.params.biller_code || ''
+        const bills= await billsInformation(biller_code)
+    
         res.status(200).json({
             status: data.successStatus,
-            message: "Airtime purchased successfully"
+            message: "Bills Information",
+            data: bills.data.data
         })
-    
-    }catch(error){
+       }catch(err){
         res.status(400).json({
             status: "error",
-            message: error.message || "Sorry, we cannot process your request at the moment"
+            message: err.response.data.message || "Sorry, we cannot process your request at the moment"
         })
-    }
+       }
+
+
 }
 
-const purchaseData = async (req, res) => {
+
+const validateCustomerBillDetails = async(req, res) => {
+
     try{
-        const { customer_id, email } = req.params // passed from the authorization
-        const { amount, operatorId, recipientPhone , payment_means } = req.body //ser
-        const service = "DATA SUBSCRIPTION"
+        const item_code = req.params.item_code || ''
+        const biller_code = req.params.biller_code || ''
+        const customer_unique_no = req.params.customer_unique_no || ''
 
-        switch(payment_means){
-
-            case paymentMeans.WALLET:
-                const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Data Subscription")
-        
-                if(transaction_reference == null) throw new Error('Insufficient balance')
-               
-                const response = await processAirtimeOrDataPurchase(customer_id,operatorId, amount, email, recipientPhone, payment_means, transaction_reference)
-                if(!response) throw new Error("Data Subscription Purchase failed") 
-                break;
-            case paymentMeans.OTHERS:
-                const  { reference } = req.body
-                if(!reference) throw new Error("Invalid Reference")
-                const transaction = await checkTransactionStatus(reference) //check if transaction reference has not been used on our system
-                
-                if(transaction != null ) throw new Error('Invalid transaction')
-                
-                const verifyPaymentReference = await verifyPayment(reference)
-                if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
-                
-                let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
-                const response2 = await processAirtimeOrDataPurchase(customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, reference)
-                if(!response2) throw new Error("Airtime Purchase failed") 
-
-                
-                break;
-            default:
-                throw new Error('Invalid payment means')
-               
-        }
-        
+        const response = await validateBillDetails(item_code, biller_code, customer_unique_no)
         res.status(200).json({
-            status: "success",
-            message: "Data successfully purchased"
+            status: data.successStatus,
+            message: "Bill details validated",
+            data: response.data.data
         })
-
     }catch(err){
         res.status(400).json({
             status: "error",
-            message: err.message
+            message: err.response.data.message || "Sorry, we cannot process your request at the moment"
         })
     }
 }
+
+// const purchaseAirtime = async(req, res) => {
+//     try{
+//         const { customer_id, email } = req.params // passed from the authorization
+//         const {  amount, operatorId, recipientPhone , payment_means } = req.body //ser
+//         const service = "AIRTIME"
+//         switch(payment_means){
+
+//             case paymentMeans.WALLET:
+//                 const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Airtime Purchase")
+        
+//                 if(transaction_reference == null) throw new Error('Insufficient balance')
+//                 const response = await processAirtimeOrDataPurchase(customer_id,operatorId, amount, email, recipientPhone, payment_means, transaction_reference)
+//                 if(!response) throw new Error("Airtime Purchase failed") 
+//                 break;
+//             case paymentMeans.OTHERS:
+//                 const  { reference } = req.body
+//                 if(!reference) throw new Error("Invalid Reference")
+//                 const transaction = await checkTransactionStatus(reference) //check if transaction reference has not been used on our system
+                
+//                 if(transaction != null ) throw new Error('Invalid transaction')
+                
+//                 const verifyPaymentReference = await verifyPayment(reference)
+//                 if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
+                
+//                 let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
+//                 const response2 = await processAirtimeOrDataPurchase(customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, reference)
+//                 if(!response2) throw new Error("Airtime Purchase failed") 
+
+                
+//                 break;
+//             default:
+//                 throw new Error('Invalid payment means')
+               
+//         }
+
+
+//         res.status(200).json({
+//             status: data.successStatus,
+//             message: "Airtime purchased successfully"
+//         })
+    
+//     }catch(error){
+//         res.status(400).json({
+//             status: "error",
+//             message: error.message || "Sorry, we cannot process your request at the moment"
+//         })
+//     }
+// }
+
+// const purchaseData = async (req, res) => {
+//     try{
+//         const { customer_id, email } = req.params // passed from the authorization
+//         const { amount, operatorId, recipientPhone , payment_means } = req.body //ser
+//         const service = "DATA SUBSCRIPTION"
+
+//         switch(payment_means){
+
+//             case paymentMeans.WALLET:
+//                 const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Data Subscription")
+        
+//                 if(transaction_reference == null) throw new Error('Insufficient balance')
+               
+//                 const response = await processAirtimeOrDataPurchase(customer_id,operatorId, amount, email, recipientPhone, payment_means, transaction_reference)
+//                 if(!response) throw new Error("Data Subscription Purchase failed") 
+//                 break;
+//             case paymentMeans.OTHERS:
+//                 const  { reference } = req.body
+//                 if(!reference) throw new Error("Invalid Reference")
+//                 const transaction = await checkTransactionStatus(reference) //check if transaction reference has not been used on our system
+                
+//                 if(transaction != null ) throw new Error('Invalid transaction')
+                
+//                 const verifyPaymentReference = await verifyPayment(reference)
+//                 if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
+                
+//                 let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
+//                 const response2 = await processAirtimeOrDataPurchase(customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, reference)
+//                 if(!response2) throw new Error("Airtime Purchase failed") 
+
+                
+//                 break;
+//             default:
+//                 throw new Error('Invalid payment means')
+               
+//         }
+        
+//         res.status(200).json({
+//             status: "success",
+//             message: "Data successfully purchased"
+//         })
+
+//     }catch(err){
+//         res.status(400).json({
+//             status: "error",
+//             message: err.message
+//         })
+//     }
+// }
     
 
-const getUtilityBillers = async (req, res) => {
-try {
-    const billers_type = req.query.billers_type || ''
-    const feedback = await getBillers(billers_type)
+// const getUtilityBillers = async (req, res) => {
+// try {
+//     const billers_type = req.query.billers_type || ''
+//     const feedback = await getBillers(billers_type)
    
-    res.status(200).json({
-        status: data.successStatus,
-        message: "Billers successfully fetched...",
-        data: feedback.data.content
-    })
+//     res.status(200).json({
+//         status: data.successStatus,
+//         message: "Billers successfully fetched...",
+//         data: feedback.data.content
+//     })
     
-} catch (err) {
+// } catch (err) {
        
-    res.status(500).json({
-        status: "error",
-        message: err.message
-    })
-}
+//     res.status(500).json({
+//         status: "error",
+//         message: err.message
+//     })
+// }
 
-}
+// }
 
 
-const buyUtilityBills = async() => {
+// const buyUtilityBills = async() => {
 
-  try {
+//   try {
+//     const { customer_id, email } = req.params // passed from the authorization
+//     const { subscriberAccountNumber, amount, billerId , payment_means } = req.body
+//     const service = 'UTILITY'
+
+//     switch(payment_means){
+
+//         case paymentMeans.WALLET:
+//             const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Utility Purchase")
+    
+//             if(transaction_reference == null) throw new Error('Insufficient balance')
+//             const response = await processUtilityPurchase(payment_means,transaction_reference,customer_id, subscriberAccountNumber, billerId, amount, email, null, "Wallet Debit for Utility Purchase" )
+//             if(!response) throw new Error("Utility Purchase failed") 
+//             break;
+//         case paymentMeans.OTHERS:
+//             const  { reference } = req.body
+//             if(!reference) throw new Error("Invalid Reference")
+//             const transaction = await checkTransactionStatus(reference) //check if transaction reference has not been used on our system
+            
+//             if(transaction != null ) throw new Error('Invalid transaction')
+            
+//             const verifyPaymentReference = await verifyPayment(reference)
+//             if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
+            
+//             let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
+//             const response2 = await processUtilityPurchase(customer_id,billerId, amountToBePurchased, email, subscriberAccountNumber, payment_means, transaction_reference)
+//             if(!response2) throw new Error("Utiltity Purchase failed") 
+
+            
+//             break;
+//         default:
+//             throw new Error('Invalid payment means')
+           
+//     }
+
+//     res.status(200).json({
+//         status: data.successStatus,
+//         message: "Utiltity purchase in process, we will hit up once we are done..."
+//     })
+    
+    
+//   } catch (error) {
+//     res.status(500).json({
+//         status: "error",
+//         message: error.message
+//     })
+//   }
+
+
+// }
+
+
+const purchaseService = async(req, res) => {
+try{
     const { customer_id, email } = req.params // passed from the authorization
-    const { subscriberAccountNumber, amount, billerId , description, payment_means } = req.body
-    const service = 'UTILITY'
+    const {biller_code, item_code, customer_unique_no, amount, payment_means, bill_name } = req.body //ser
 
     switch(payment_means){
 
         case paymentMeans.WALLET:
-            const transaction_reference = await debitWallet(amount, customer_id, email, service, "Wallet Debit for Utility Purchase")
+            const transaction_reference = await debitWallet(amount, customer_id, email, `Wallet Debit for ${bill_name} Purchase`)
     
             if(transaction_reference == null) throw new Error('Insufficient balance')
-            const response = await processUtilityPurchase(customer_id,billerId, amount, email, subscriberAccountNumber, payment_means, transaction_reference)
-            if(!response) throw new Error("Airtime Purchase failed") 
+            const response = await processBillsTransaction(customer_id, email, payment_means, biller_code, item_code, customer_unique_no, amount, transaction_reference)
+            if(response == false) throw new Error("Bills Purchase failed")
             break;
         case paymentMeans.OTHERS:
             const  { reference } = req.body
@@ -512,59 +613,13 @@ const buyUtilityBills = async() => {
             if(verifyPaymentReference.data.data.status != 'success') throw new Error('Invalid transaction or payment failed')
             
             let amountToBePurchased = verifyPaymentReference.data.data.amount / NAIRA_CONVERSION
-            const response2 = await processUtilityPurchase(customer_id,billerId, amount, email, subscriberAccountNumber, payment_means, transaction_reference)
-            if(!response2) throw new Error("Airtime Purchase failed") 
-
-            
+            const response2 = await processBillsTransaction(customer_id, email, payment_means, biller_code, item_code, customer_unique_no, amountToBePurchased, reference)
+            if(response2 == false) throw new Error("Bills Purchase failed")
             break;
         default:
             throw new Error('Invalid payment means')
-           
+            
     }
-
-    res.status(200).json({
-        status: data.successStatus,
-        message: "Utiltity in process, we will hit up once we are done..."
-    })
-    
-    
-  } catch (error) {
-    
-  }
-
-
-}
-
-
-const purchaseService = async(req, res) => {
-try{
-    const { customer_id, email } = req.params // passed from the authorization
-    const { service, amount, payment_means } = req.body //ser
-
-    if(payment_means === paymentMeans.WALLET){
-        //debit the customer wallet
-        const wallet = await Wallets.findOne({where:{ customer_id: customer_id} })
-        const canBuyService =  Number(wallet.amount) - amount
-
-        if(canBuyService  < 0) throw new Error('Insufficient balance')
-
-    }
-    
-    switch(service){
-        case 'AIRTIME':
-            const { operatorId, recipientPhone } = req.body //ser
-            break;
-        case 'DATA':
-            break;
-        case 'service3':
-            break;
-        case 'service4':
-            break;
-        default:
-
-    }
-
-
 
     res.status(200).json({
         status: data.successStatus,
@@ -572,6 +627,7 @@ try{
     })
 
 }catch(error){
+    console.log("error: ", error)
     res.status(400).json({
         status: "error",
         message: error.message || "Sorry, we cannot process your request at the moment"
@@ -583,111 +639,84 @@ try{
 
 
 
-
-
-
-async function processAirtimeOrDataPurchase (customer_id, operatorId, amountToBePurchased, email, recipientPhone, payment_means, transaction_reference) {
-    const response = await buyAirtime(operatorId, amountToBePurchased, email, recipientPhone)
-    const isSuccess = Object.keys(response).includes('status')
-    if(!isSuccess) {
+async function processBillsTransaction (customer_id, email, payment_means, biller_code, item_code, customer_unique_no, amount, transaction_reference) {
+    const response = await creatBillPayment(biller_code, item_code, customer_unique_no, amount, transaction_reference)
+    if(response.data.status != 'success')  {
         //refund him 
         if(payment_means == paymentMeans.WALLET){ //only credit wallet back whne payment is only wallet
-             await creditWallet(amount, customer_id, email, 'Refund for failed airtime purchase')
+             await creditWallet(amount, customer_id, email, 'Refund for failed bills purchase')
         }
         return false
-    }else{
-        //update the transaction table
-        if(payment_means == paymentMeans.WALLET){
-              await Transactions.update({ status: 'completed'}, {where: { payment_reference: transaction_reference}})
-        }else{
-            await Transactions.create({
-                transaction_id: uuidv4(),
-                wallet_id: null,
-                amount: amountToBePurchased,
-                description: 'Airtime purchase',
-                email: email,
-                transaction_type: 'debit',
-                status: 'completed',
-                service: 'AIRTIME',
-                payment_means: paymentMeans.OTHERS,
-                payment_reference: transaction_reference
-            })
-        }
-        return true
     }
-}
+        //verify the transaction
+    const verifyTransaction = await billStatus(transaction_reference)
+    if(verifyTransaction.data.status != 'success') return false
 
-
-
-
-
-
-
-
-async function processUtilityPurchase (payment_means, transaction_reference, customer_id,subscriberAccountNumber, billerId, amount, email, amountId=null, description) {
-    const response = await buyUtilityBills(amountId,subscriberAccountNumber, amount, billerId , description)
-   // const isSuccess = Object.keys(response).includes('status') && (response.data.status =='PROCESSING' || response.data.status == 'SUCCESSFUL')
-        //update the transaction table
+    if(verifyTransaction.data.data.status == 'successful'){
         if(payment_means == paymentMeans.WALLET){
-              await Transactions.update({ transaction_id: response.data.referenceId}, {where: { payment_reference: transaction_reference}})
-        }else{
-            await Transactions.create({
-                transaction_id: response.data.referenceId,
-                wallet_id: null,
-                amount: amount,
-                description: 'Utiltity purchase',
-                email: email,
-                transaction_type: 'debit',
-                status: 'pending',
-                service: 'UTILITY',
-                payment_means: paymentMeans.OTHERS,
-                payment_reference: transaction_reference
-            })
-        }
-        return true
+            await Transactions.update({ status: 'completed'}, {where: { payment_reference: transaction_reference}})
+      }else{
+          await Transactions.create({
+              transaction_id: uuidv4(),
+              wallet_id: null,
+              amount: amountToBePurchased,
+              description: 'Airtime purchase',
+              email: email,
+              transaction_type: 'debit',
+              status: 'completed',
+              service: 'AIRTIME',
+              payment_means: paymentMeans.OTHERS,
+              payment_reference: transaction_reference
+          })
+      }
+     
+    }
+
+    return true
     
 }
 
-const crawlAndUpdateUtilityStatus = async() => {
 
-    
+
+const crawlAndUpdateUtilityStatus = async() => { 
     try {
 
-        const response = await Transactions.findAll({ where: { status: 'pending', service: 'UTILITY' }  })
-
+        const response = await Transactions.findAll({ where: { status: 'pending' }  })
         if(!response.length) {
             console.log("nothing to do")
             return 
         }
 
-        response.data.forEach( async item => {
-
-        //go to reloadly to check the statu of that transaction
-           const transactionStatus =  await checkUtiltityTransactionStatus(item.transaction_id)
-           if(transactionStatus.data[0].transaction.status  == "SUCCESSFUL"){
+        response.forEach( async item => {
+        //go to flutterwavw to check the statu of that transaction
+           const transactionStatus =  await billStatus(item.payment_reference)
+           if(transactionStatus.data.data.status  == "successful"){
             //update our tranaction
              await Transactions.update({ status: 'completed'}, {where: { transaction_id: item.transaction_id}})
              //send teh details to teh customer
-             const billerType = transactionStatus[0].transaction.billDetails.type //ELECTRICITY_BILL_PAYMENT
-             const billerName = transactionStatus[0].transaction.billerName //woyofal Senegal
-             const subscriberNumber = transactionStatus[0].transaction.billDetails.subscriberDetails.accountNumber //14414354515
-             const pinDetails = transactionStatus[0].transaction.pinDetails
+             const billerName = transactionStatus.data.data.product //AIRTIME
+             const customer_unique_no = transactionStatus.data.data.customer_id //14414354515
+             const amount = transactionStatus.data.data.amount //1000
+             const transaction_date = transactionStatus.data.data.transaction_date //2021-09-01T12:00:00.000Z
+             const reference = transactionStatus.data.data.tx_ref //123456789
 
              //send email
              const message = `Your transaction was successful. Find the detaila below
-                              Biller: ${billerType} - Billername:  ${billerName} . 
-                              Your account is ${subscriberNumber} . Find below pin details 
-                              Token : ${pinDetails.token} - Value: ${pinDetails.info1}
-                              `
+                              Billername:  ${billerName} . 
+                              Your account is ${customer_unique_no} .
+                              Amount: ${amount} . 
+                              Transaction Date: ${transaction_date} .
+                              Reference: ${reference} .`
+                              
                            
              sendEmail(item.email, message, "Suceessful Bills Transaction") 
              console.log("details sent to customer success")
 
-           }else if(transactionStatus.data[0].transaction.status  == "FAILED" 
+           }else if(transactionStatus.data.status  == "error" 
                     && item.payment_means == paymentMeans.WALLET){
                         //refund the mooney
                         const customerId = await getWalletDetailByEmail(email)
-                        await creditWallet(item.amount, customerId, item.email, "Wallet refund for failed Utility purchase")
+                        await creditWallet(item.amount, customerId, item.email, "Wallet refund for failed Bills purchase")
 
                         console.log("refunded success")
 
@@ -702,10 +731,7 @@ const crawlAndUpdateUtilityStatus = async() => {
         
     } catch (err) {
         
-        res.status(400).json({
-            status: "error",
-            message: err.message
-        })
+     console.log("yoooooo, wneis your nikkah, azeez", err.message)
     }
 }
 
@@ -721,8 +747,10 @@ module.exports = {
     getAllServices,
     getOperators,
     purchaseService,
-    purchaseAirtime,
-    purchaseData,
-    getUtilityBillers,
-    crawlAndUpdateUtilityStatus
+    // purchaseAirtime,
+    // purchaseData,
+  //  getUtilityBillers,
+    crawlAndUpdateUtilityStatus,
+    getBills,
+    validateCustomerBillDetails
 }
