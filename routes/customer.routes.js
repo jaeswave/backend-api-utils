@@ -8,6 +8,35 @@ const { createCustomer, updateCustomer, verifyEmail, login,
 const { authorization } = require('../middleware/authorisation');
 const { buyUtilityBills } = require('../services/reloadly.service');
 
+
+
+/**
+ * @openapi
+ * /customer:
+ *  post:
+ *   summary: Create a customer
+ *   description: This endpoint will Create a customer
+ *   parameters:	 
+ *       - name: lastname	 
+ *         in: body	 
+ *         required: true
+ *       - name: othernames	 
+ *         in: body	 
+ *         required: true
+ *       - name: email	 
+ *         in: body	 
+ *         required: true
+ *       - name: phone_number	 
+ *         in: body	 
+ *         required: true
+ *       - name: password	 
+ *         in: body	 
+ *         required: true 
+ *         type: number
+ *   responses:
+ *    200:
+ *    description: Customer account created successfully
+ */
 router.post('/customer', createCustomer); 
 
 router.patch('/verify-email/:email/:otp', verifyEmail);
@@ -18,6 +47,23 @@ router.get('/customer', authorization, getCustomer);
 
 router.post('/customer/login', login);
 
+
+/**
+ * @openapi
+ * /customer/wallet-funding/start:
+ *  post:
+ *   summary: Create a customer
+ *   description: This endpoint will Create a customer
+ *   parameters:	 
+ *       - name: amount	 
+ *         in: body	 
+ *         required: true
+ *   headers:
+ *      Authorization: token
+ *   responses:
+ *    200:
+ *    description: Customer account created successfully
+ */
 router.post('/customer/wallet-funding/start', authorization, startWalletFunding);
 
 router.post('/customer/wallet-funding/complete/:reference', authorization, completeWalletFunding);

@@ -22,16 +22,18 @@ const { sendEmail } = require('../services/email.service')
 const { billsCategories, billersInformation, billsInformation,
      validateBillDetails, creatBillPayment, billStatus } = require('../services/flutterwave.service')
 
-const createCustomer = async(req, res) => {
+const createCustomer = async(req, res, next) => {
 
    try{
 
     const { surname, othernames, email, password } = req.body
     const { error } = createCustomerValidation(req.body)
-    if (error != undefined) throw new Error(error.details[0].message || "Something went wrong") 
+    if (error != undefined) throw new Error(error.details[0].message || "Something went wrong")
+
      const checkIfEmailExist = await Customers.findOne({where:{ email: email} })
- 
+    
     if(checkIfEmailExist != null ) throw new Error(data.customerExist)
+
     const [hash, salt] = await hashPassword(password)
     await TemporaryCustomers.create({
         customer_id: uuidv4(),
@@ -56,22 +58,30 @@ const createCustomer = async(req, res) => {
      })
 
    }catch(error){
+    console.log("error: ", error)
+    // res.status(400).json({
+    //     status: "error",
+    //     message: error.message
+    // })
 
-    res.status(400).json({
-        status: "error",
-        message: error.message
-    })
+    next(error)
    }
    
 }
 
-const verifyEmail = async(req, res) => {
+const verifyEmail = async(req, res, next) => {
 
     try{
         const { email, otp } = req.params
         const checkIfEmailAndOtpExist =  await Otp.findOne({where:{ email: email, otp: otp} })
        
-        if(checkIfEmailAndOtpExist == null ) throw new Error(data.otpInvalidOrExpired)
+        if(checkIfEmailAndOtpExist == null ){
+            const err = new Error()
+            err.message = data.otpInvalidOrExpired
+            err.code = 400
+            throw err
+
+        } 
     
         //get all the daata by emeail from the customerTemp table
         const customerTemp = await TemporaryCustomers.findOne({where:{ email: email} })
@@ -117,10 +127,11 @@ const verifyEmail = async(req, res) => {
         })
 
     }catch(error){
-        res.status(400).json({
-            status: "error",
-            message: error.message || "Something went wrong, try again later"
-        })
+        next(error)
+        // res.status(400).json({
+        //     status: "error",
+        //     message: error.message || "Something went wrong, try again later"
+        // })
     }
     
 }
@@ -645,6 +656,8 @@ async function processBillsTransaction (customer_id, email, payment_means, bille
         //refund him 
         if(payment_means == paymentMeans.WALLET){ //only credit wallet back whne payment is only wallet
              await creditWallet(amount, customer_id, email, 'Refund for failed bills purchase')
+             //update transaction to failed
+                await Transactions.update({ status: 'failed'}, {where: { payment_reference: transaction_reference}})
         }
         return false
     }
@@ -717,7 +730,8 @@ const crawlAndUpdateUtilityStatus = async() => {
                         //refund the mooney
                         const customerId = await getWalletDetailByEmail(email)
                         await creditWallet(item.amount, customerId, item.email, "Wallet refund for failed Bills purchase")
-
+                        //update the transaction to failed
+                        await Transactions.update({ status: 'failed'}, {where: { transaction_id: item.transaction_id}})
                         console.log("refunded success")
 
            }else{
@@ -731,7 +745,7 @@ const crawlAndUpdateUtilityStatus = async() => {
         
     } catch (err) {
         
-     console.log("yoooooo, wneis your nikkah, azeez", err.message)
+    //  console.log("yoooooo, wneis your nikkah, azeez", err.message)
     }
 }
 
