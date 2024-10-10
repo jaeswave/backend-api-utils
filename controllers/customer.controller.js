@@ -14,7 +14,7 @@ const { initializePayment, verifyPayment } =  require('../services/payment.servi
 const { buyAirtime, getBillers, checkUtiltityTransactionStatus } = require('../services/reloadly.service')
 const { Transactions } = require('../models/transaction.model')
 const { operators } = require('../services/reloadly.service')
-const ONE_HOUR = '1h'
+const ONE_HOUR = '5h'
 const NAIRA_CONVERSION = 100
 const {paymentMeans} = require('../enum')
 const { debitWallet, creditWallet, checkTransactionStatus } = require('../utils')
@@ -191,7 +191,7 @@ const updateCustomer = async(req, res) => {
     }
 
 
- }
+}
 
  const getCustomer = async(req, res) => {
     try{
